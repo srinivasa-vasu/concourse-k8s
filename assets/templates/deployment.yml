@@ -1,0 +1,27 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: $resource_name
+  namespace: $namespace
+spec:
+  replicas: $replica
+  template:
+    metadata:
+      labels:
+        app: $resource_name
+    spec:
+      containers:
+      - name: $container_name
+        image: $image:$tag
+        imagePullPolicy: IfNotPresent
+        env:
+$env_values
+        resources:
+          requests:
+            memory: "${resource_request_memory:-256Mi}"
+            cpu: "${resource_request_cpu:-500m}"
+          limits:
+            memory: "${resource_limit_memory:-512Mi}"
+            cpu: "${resource_limit_cpu:-1}"
+        ports:
+$port_values

@@ -1,0 +1,34 @@
+#!/bin/bash
+
+set -e
+#set -o pipefail
+
+# make stdout available as fd 3 for the result
+exec 3>&1
+# for logging
+exec 1>&2
+
+source /opt/resource/common.sh
+
+# Read inputs
+source=$1
+payload=$(mktemp $TMPDIR/k8s-resource-request.XXXXXX)
+cat > $payload <&0
+
+# Prepare
+initialize($payload, $source);
+echo "Resource setup successful."
+
+# Parse parameters
+
+resource_type=$(jq -r .source.resource_type < "$payload")
+resource_name=$(jq -r .source.resource_name < "$payload")
+namespace=$(jq -r '.source.namespace // "default"' < $payload)
+if [[ -z "$resource_type" ]] || [[ -z "$resource_name" ]]; then
+    result=$(jq -n "[]")
+else
+    IMG=$($KUBECTL get -o json "$resource_type/$resource_name" -n $namespace | jq -r '.spec.template.spec.containers[0].image')
+    result=$(jq -n "[{container:\"$IMG\"}]")
+fi
+
+echo "$result" | jq -s add  >&3
