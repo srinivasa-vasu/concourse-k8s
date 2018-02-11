@@ -1,10 +1,10 @@
 #!/bin/bash
 set -e
 
-initialize(payload, source) {
+initialize() {
   echo "Initializing kubectl..."
-  #payload=$1
-  #source=$2
+  payload=$1
+  source=$2
   # Setup kubectl
   cluster_url=$(jq -r '.source.cluster_url // ""' < $payload)
   if [ -z "$cluster_url" ]; then

@@ -15,4 +15,4 @@ RUN set -x && \
     rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /opt/resource
-COPY assets/* /opt/resource/
+COPY assets/ /opt/resource/

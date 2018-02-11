@@ -16,7 +16,7 @@ payload=$(mktemp $TMPDIR/k8s-resource-request.XXXXXX)
 cat > $payload <&0
 
 # Prepare
-initialize($payload, $source);
+initialize $payload $source
 echo "Resource setup successful."
 
 # Parse parameters

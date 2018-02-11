@@ -8,75 +8,26 @@ exec 1>&2 # redirect all output to stderr for logging
 
 source /opt/resource/common.sh
 
-# Read inputs
-source=$1
-payload=$(mktemp helm-resource-request.XXXXXX)
-cat > $payload <&0
-
-# Prepare
-initialize($payload, $source);
-
-# Parse parameters
-resource_type=$(echo $(jq -r .params.resource_type < "$payload") | awk '{print tolower($0)}')
-
-if [[ -z "$resource_type" ]]; then
-    resource_type=$(jq -r .source.resource_type < "$payload")
-fi
-
-[[ -z $resource_type ]] && { echo "Missing resource type"; exit 1; }
-
-
-
-namespace=$(jq -r .params.namespace < $payload)
-if [[ -z "$namespace" ]]; then
-    namespace=$(jq -r '.source.namespace // "default"' < "$payload")
-fi
-
-# get image name
-image=$(jq -r .params.image_name < "$payload")
-tag=$(jq -r '.params.image_tag // "1.0"' < "$payload")
-
-resource_name=$(jq -r .params.resource_name < "$payload")
-if [[ -z "$resource_name" ]]; then
-    resource_name=$(jq -r .source.resource_name < "$payload")
-fi
-
-container_name=$(jq -r .source.container_name < "$payload")
-if [[ -z "$container_name" ]]; then
-  container_name=$resource_name
-fi
-
-replica=$(jq -r '.params.replica // "1"' < "$payload")
-resource_request_memory=$(jq -r .params.resource_request_memory < "$payload")
-resource_limit_memory=$(jq -r .params.resource_limit_memory < "$payload")
-resource_request_cpu=$(jq -r .params.resource_request_cpu < "$payload")
-resource_limit_cpu=$(jq -r .params.resource_limit_cpu < "$payload")
-#env_values=$(jq -r .params.env_values < "$payload")
-env_values=$(jq -r ".params.env_values[]? | if .key and .value and (.hide // false) == false then (\"$(printf "%8s")\"+\"- \"+.key + \":\" + .value) else empty end "  < $payload)
-port_values=
-expose_type=$(jq -r '.params.expose_type // "ClusterIP"' < "$payload")
-result=
-
-initCommonParams;
-validate;
-apply;
-
 initCommonParams() {
+  echo "Initializing common params..."
 
   case $resource_type in
     deployment)
-      port_values=$(jq -r ".params.port_values[]? | if .key and .value and (.hide // false) == false then (\"$(printf "%8s")\"+\"- \"+.key + \":\" + .value) else empty end "  < $payload)
+      port_values=$(jq -r ".params.port_values[]? | if .name and .containerPort then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")containerPort: \" + .containerPort) else empty end "  < $payload)
     ;;
     service)
-      port_values=$(jq -r ".params.port_values[]? | if .key and .value and (.hide // false) == false then (\"$(printf "%2s")\"+\"- \"+.key + \":\" + .value) else empty end "  < $payload)
+      port_values=$(jq -r ".params.port_values[]? | if .name and .port then (\"$(printf "%2s")\"+\"- name: \"+.name + \"\n$(printf "%4s")port: \"  + .port) else empty end "  < $payload)
     ;;
     *)
     ;;
   esac
+
+  echo "Common params initialization successful"
 }
 
 
 validate() {
+  echo "Validating params of \"$resource_type\" object..."
 
   case $resource_type in
     deployment)
@@ -99,25 +50,89 @@ validate() {
       exit 1
     ;;
   esac
+
+  echo "Validation of \"$resource_type\" object successful"
 }
 
 apply() {
 
+  echo "Applying changes of \"$resource_type\"..."
+
   case $resource_type in
     deployment)
-      eval "\"$(cat deployment.yml)\"" | kubectl apply -f -
+      template="$(cat /opt/resource/templates/deployment.yml)"
+      eval "echo \"${template}\"" | kubectl apply -f -
       result="$(jq -n "{version:{container:\"$image:$tag\"}}")"
+      echo "Deployment object successfully initialized"
     ;;
     service)
-      eval "\"$(cat service.yml)\"" | kubectl apply -f -
+      template="$(cat /opt/resource/templates/service.yml)"
+      eval "echo \"${template}\"" | kubectl apply -f -
       result="$(jq -n "{service:{selector:\"$resource_name\"}}")"
+      echo "Service object successfully initialized"
     ;;
     *)
       exit 1
     ;;
   esac
 
-
+  echo "\"$resource_type\" changes applied successfully"
 }
+
+# Read inputs
+source=$1
+payload=$(mktemp helm-resource-request.XXXXXX)
+cat > $payload <&0
+
+# Prepare
+initialize $payload $source
+
+echo "Parsing parameters"
+# Parse parameters
+resource_type=$(echo $(jq -r .params.resource_type < "$payload") | awk '{print tolower($0)}')
+
+if [[ -z "$resource_type" ]]; then
+    resource_type=$(echo $(jq -r .source.resource_type < "$payload") | awk '{print tolower($0)}')
+fi
+
+[[ -z $resource_type ]] && { echo "Missing resource type"; exit 1; }
+
+
+
+namespace=$(jq -r '.params.namespace // ""' < $payload)
+if [[ -z "$namespace" ]]; then
+    namespace=$(jq -r '.source.namespace // "default"' < "$payload")
+fi
+
+# get image name
+image=$(jq -r .params.image_name < "$payload")
+tag=$(jq -r '.params.image_tag // "1.0"' < "$payload")
+
+resource_name=$(jq -r '.params.resource_name // ""' < "$payload")
+if [[ -z "$resource_name" ]]; then
+    resource_name=$(jq -r .source.resource_name < "$payload")
+fi
+
+container_name=$(jq -r '.source.container_name // ""' < "$payload")
+if [[ -z "$container_name" ]]; then
+  container_name=$resource_name
+fi
+
+replica=$(jq -r '.params.replica // "1"' < "$payload")
+resource_request_memory=$(jq -r '.params.resource_request_memory // "512Mi"' < "$payload")
+resource_limit_memory=$(jq -r '.params.resource_limit_memory // "1Gi"' < "$payload")
+resource_request_cpu=$(jq -r '.params.resource_request_cpu // "500m"' < "$payload")
+resource_limit_cpu=$(jq -r '.params.resource_limit_cpu // "1"' < "$payload")
+#env_values=$(jq -r .params.env_values < "$payload")
+env_values=$(jq -r ".params.env_values[]? | if .name and .value then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")value: \\\"\" + .value + \"\\\"\") else empty end "  < $payload)
+port_values=
+expose_type=$(jq -r '.params.expose_type // "ClusterIP"' < "$payload")
+result=
+
+
+
+initCommonParams
+validate
+apply
 
 echo "$result" | jq -s add  >&3

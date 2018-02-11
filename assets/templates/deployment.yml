@@ -18,10 +18,10 @@ spec:
 $env_values
         resources:
           requests:
-            memory: "${resource_request_memory:-256Mi}"
-            cpu: "${resource_request_cpu:-500m}"
+            memory: \"${resource_request_memory}\"
+            cpu: \"${resource_request_cpu}\"
           limits:
-            memory: "${resource_limit_memory:-512Mi}"
-            cpu: "${resource_limit_cpu:-1}"
+            memory: \"${resource_limit_memory}\"
+            cpu: \"${resource_limit_cpu}\"
         ports:
 $port_values
