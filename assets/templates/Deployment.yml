@@ -14,6 +14,7 @@ spec:
       - name: $container_name
         image: $image:$tag
         imagePullPolicy: IfNotPresent
+$command
         env:
 $env_values
         resources:
@@ -25,3 +26,5 @@ $env_values
             cpu: \"${resource_limit_cpu}\"
         ports:
 $port_values
+$readiness_probe
+$liveness_probe

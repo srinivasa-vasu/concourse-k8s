@@ -1,3 +1,4 @@
 #!/bin/bash
 
+# GET not implemented
 echo '{"version":{"ref":"none"}}'

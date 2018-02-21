@@ -8,15 +8,55 @@ exec 1>&2 # redirect all output to stderr for logging
 
 source /opt/resource/common.sh
 
-initCommonParams() {
+parse() {
   echo "Initializing common params..."
 
   case $resource_type in
-    deployment)
-      port_values=$(jq -r ".params.port_values[]? | if .name and .containerPort then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")containerPort: \" + .containerPort) else empty end "  < $payload)
+    deployment|d)
+        # get image name
+        image=$(jq -r .params.image_name < "$payload")
+        tag=$(jq -r '.params.image_tag // "1.0"' < "$payload")
+        resource_request_memory=$(jq -r '.params.resource_request_memory // "512Mi"' < "$payload")
+        resource_limit_memory=$(jq -r '.params.resource_limit_memory // "1Gi"' < "$payload")
+        resource_request_cpu=$(jq -r '.params.resource_request_cpu // "500m"' < "$payload")
+        resource_limit_cpu=$(jq -r '.params.resource_limit_cpu // "1"' < "$payload")
+        #env_values=$(jq -r .params.env_values < "$payload")
+        env_values=$(jq -r ".params.env_values[]? | if .name and .value then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")value: \\\"\" + .value + \"\\\"\") else empty end "  < $payload)
+
+        readiness_probe=$(jq -r 'if .params.readiness_probe then {readinessProbe: .params.readiness_probe} else empty end' < "$payload")
+        if [[ -n $readiness_probe ]]; then
+          readiness_probe=$( echo $readiness_probe | j2y | awk '{print "        " $0}' )
+        fi
+
+        command=$(jq -r 'if .params.command then {command: .params.command} else empty end' < "$payload")
+        if [[ -n $command ]]; then
+          command=$( echo $command | j2y | awk '{print "        " $0}' )
+        fi
+
+        liveness_probe=$(jq -r 'if .params.liveness_probe then {livenessProbe: .params.liveness_probe} else empty end' < "$payload")
+        if [[ -n $liveness_probe ]]; then
+          liveness_probe=$( echo $liveness_probe | j2y | awk '{print "        " $0}' )
+        fi
+
+        port_values=$(jq -r ".params.port_values[]? | if .name and .containerPort then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")containerPort: \" + .containerPort) else empty end "  < $payload)
+        #deployment
+        replica=$(jq -r '.params.replica // "1"' < "$payload")
     ;;
-    service)
-      port_values=$(jq -r ".params.port_values[]? | if .name and .port then (\"$(printf "%2s")\"+\"- name: \"+.name + \"\n$(printf "%4s")port: \"  + .port) else empty end "  < $payload)
+    service|s|svc)
+        port_values=$(jq -r ".params.port_values[]? | if .name and .port then (\"$(printf "%2s")\"+\"- name: \"+.name + \"\n$(printf "%4s")port: \"  + .port) else empty end "  < $payload)
+        #service
+        expose_type=$(jq -r '.params.expose_type // "ClusterIP"' < "$payload")
+    ;;
+    configmap|cm|config)
+        #configmap
+        config_data=$(jq -r '.params.config_data // ""' < "$payload")
+        #config_data=$(jq -r 'if .params.config_data then {data: .params.config_data} else empty end' < "$payload")
+        echo $config_data
+
+        if [[ -n $config_data ]]; then
+          echo $config_data | j2y
+          config_data=$( echo $config_data | j2y | awk '{print "  " $0}' )
+        fi
     ;;
     *)
     ;;
@@ -30,19 +70,21 @@ validate() {
   echo "Validating params of \"$resource_type\" object..."
 
   case $resource_type in
-    deployment)
+    deployment|d)
       if [[ -z "$image" ]]; then
        echo "Missing container image"
        exit 1
       fi
-      if [[ -z "$resource_name" ]]; then
-       echo "Missing resource name"
+    ;;
+    service|s|svc)
+      if [[ -z "$port_values" ]]; then
+       echo "Missing expose port values"
        exit 1
       fi
     ;;
-    service)
-      if [[ -z "$port_values" ]]; then
-       echo "Missing expose port values"
+    configmap|cm|config)
+      if [[ -z "$config_data" ]]; then
+       echo "Missing config data"
        exit 1
       fi
     ;;
@@ -59,17 +101,27 @@ apply() {
   echo "Applying changes of \"$resource_type\"..."
 
   case $resource_type in
-    deployment)
-      template="$(cat /opt/resource/templates/deployment.yml)"
-      eval "echo \"${template}\"" | kubectl apply -f -
-      result="$(jq -n "{version:{container:\"$image:$tag\"}}")"
+    deployment|d)
+      template="$(cat /opt/resource/templates/Deployment.yml)"
+      #eval "echo \"${template}\"" | sed '/^$/d'
+      eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
+      result="$(jq -n "{version:{container:\"$image:$tag\", ref:$(kubectl get deploy/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}}")"
       echo "Deployment object successfully initialized"
     ;;
-    service)
-      template="$(cat /opt/resource/templates/service.yml)"
-      eval "echo \"${template}\"" | kubectl apply -f -
-      result="$(jq -n "{service:{selector:\"$resource_name\"}}")"
+    service|s|svc)
+      template="$(cat /opt/resource/templates/Service.yml)"
+      eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
+      #result="$(jq -n "{service:{selector:\"$resource_name\"}}")"
+      result="$(jq -n "{version:{ref:$(kubectl get svc/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}, buildId: \"$BUILD_ID\"}")"
       echo "Service object successfully initialized"
+    ;;
+    configmap|cm|config)
+      template="$(cat /opt/resource/templates/ConfigMap.yml)"
+      #eval "echo \"${template}\""
+      eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
+      #result="$(jq -n "{version:{container:\"$image:$tag\"}}")"
+      result="$(jq -n "{version:{ref:$(kubectl get cm/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion), buildId: \"$BUILD_ID\"}}")"
+      echo "ConfigMap object successfully initialized"
     ;;
     *)
       exit 1
@@ -77,6 +129,11 @@ apply() {
   esac
 
   echo "\"$resource_type\" changes applied successfully"
+}
+
+function printDeploymentProbe()
+{
+    echo $(echo $1 | j2y | awk '{print "        " $0}')
 }
 
 # Read inputs
@@ -97,41 +154,24 @@ fi
 
 [[ -z $resource_type ]] && { echo "Missing resource type"; exit 1; }
 
-
-
-namespace=$(jq -r '.params.namespace // ""' < $payload)
-if [[ -z "$namespace" ]]; then
-    namespace=$(jq -r '.source.namespace // "default"' < "$payload")
-fi
-
-# get image name
-image=$(jq -r .params.image_name < "$payload")
-tag=$(jq -r '.params.image_tag // "1.0"' < "$payload")
-
 resource_name=$(jq -r '.params.resource_name // ""' < "$payload")
 if [[ -z "$resource_name" ]]; then
     resource_name=$(jq -r .source.resource_name < "$payload")
 fi
+
+[[ -z $resource_name ]] && { echo "Missing resource name"; exit 1; }
 
 container_name=$(jq -r '.source.container_name // ""' < "$payload")
 if [[ -z "$container_name" ]]; then
   container_name=$resource_name
 fi
 
-replica=$(jq -r '.params.replica // "1"' < "$payload")
-resource_request_memory=$(jq -r '.params.resource_request_memory // "512Mi"' < "$payload")
-resource_limit_memory=$(jq -r '.params.resource_limit_memory // "1Gi"' < "$payload")
-resource_request_cpu=$(jq -r '.params.resource_request_cpu // "500m"' < "$payload")
-resource_limit_cpu=$(jq -r '.params.resource_limit_cpu // "1"' < "$payload")
-#env_values=$(jq -r .params.env_values < "$payload")
-env_values=$(jq -r ".params.env_values[]? | if .name and .value then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")value: \\\"\" + .value + \"\\\"\") else empty end "  < $payload)
-port_values=
-expose_type=$(jq -r '.params.expose_type // "ClusterIP"' < "$payload")
-result=
+namespace=$(jq -r '.params.namespace // ""' < $payload)
+if [[ -z "$namespace" ]]; then
+    namespace=$(jq -r '.source.namespace // "default"' < "$payload")
+fi
 
-
-
-initCommonParams
+parse
 validate
 apply
 
