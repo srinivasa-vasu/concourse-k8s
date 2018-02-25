@@ -20,45 +20,35 @@ parse() {
         resource_limit_memory=$(jq -r '.params.resource_limit_memory // "1Gi"' < "$payload")
         resource_request_cpu=$(jq -r '.params.resource_request_cpu // "500m"' < "$payload")
         resource_limit_cpu=$(jq -r '.params.resource_limit_cpu // "1"' < "$payload")
-        #env_values=$(jq -r .params.env_values < "$payload")
         env_values=$(jq -r ".params.env_values[]? | if .name and .value then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")value: \\\"\" + .value + \"\\\"\") else empty end "  < $payload)
-
         readiness_probe=$(jq -r 'if .params.readiness_probe then {readinessProbe: .params.readiness_probe} else empty end' < "$payload")
         if [[ -n $readiness_probe ]]; then
           readiness_probe=$( echo $readiness_probe | j2y | awk '{print "        " $0}' )
         fi
-
         command=$(jq -r 'if .params.command then {command: .params.command} else empty end' < "$payload")
         if [[ -n $command ]]; then
           command=$( echo $command | j2y | awk '{print "        " $0}' )
         fi
-
         liveness_probe=$(jq -r 'if .params.liveness_probe then {livenessProbe: .params.liveness_probe} else empty end' < "$payload")
         if [[ -n $liveness_probe ]]; then
           liveness_probe=$( echo $liveness_probe | j2y | awk '{print "        " $0}' )
         fi
-
         port_values=$(jq -r ".params.port_values[]? | if .name and .containerPort then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")containerPort: \" + .containerPort) else empty end "  < $payload)
-        #deployment
         replica=$(jq -r '.params.replica // "1"' < "$payload")
     ;;
     service|s|svc)
         port_values=$(jq -r ".params.port_values[]? | if .name and .port then (\"$(printf "%2s")\"+\"- name: \"+.name + \"\n$(printf "%4s")port: \"  + .port) else empty end "  < $payload)
-        #service
         expose_type=$(jq -r '.params.expose_type // "ClusterIP"' < "$payload")
     ;;
-    configmap|cm|config)
-        #configmap
+    configmap|cm|config|secret)
         config_data=$(jq -r '.params.config_data // ""' < "$payload")
-        #config_data=$(jq -r 'if .params.config_data then {data: .params.config_data} else empty end' < "$payload")
-        echo $config_data
-
         if [[ -n $config_data ]]; then
-          echo $config_data | j2y
           config_data=$( echo $config_data | j2y | awk '{print "  " $0}' )
         fi
     ;;
     *)
+        echo "Not yet supported"
+        exit 1
     ;;
   esac
 
@@ -82,14 +72,13 @@ validate() {
        exit 1
       fi
     ;;
-    configmap|cm|config)
+    configmap|cm|config|secret)
       if [[ -z "$config_data" ]]; then
        echo "Missing config data"
        exit 1
       fi
     ;;
     *)
-      exit 1
     ;;
   esac
 
@@ -121,14 +110,17 @@ apply() {
       eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
       #result="$(jq -n "{version:{container:\"$image:$tag\"}}")"
       result="$(jq -n "{version:{ref:$(kubectl get cm/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion), buildId: \"$BUILD_ID\"}}")"
-      echo "ConfigMap object successfully initialized"
+      echo "ConfigMap object successfully created"
+    ;;
+    secret)
+      template="$(cat /opt/resource/templates/Secret.yml)"
+      eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
+      result="$(jq -n "{version:{ref:$(kubectl get secret/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion), buildId: \"$BUILD_ID\"}}")"
+      echo "Secret object successfully created"
     ;;
     *)
-      exit 1
     ;;
-  esac
-
-  echo "\"$resource_type\" changes applied successfully"
+  esa  echo "\"$resource_type\" changes applied successfully"
 }
 
 function printDeploymentProbe()

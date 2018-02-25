@@ -16,8 +16,6 @@ initialize() {
     cluster_ca=$(jq -r '.source.cluster_ca // ""' < $payload)
     admin_key=$(jq -r '.source.admin_key // ""' < $payload)
     admin_cert=$(jq -r '.source.admin_cert // ""' < $payload)
-    #token=$(jq -r '.source.token // ""' < $payload)
-    #token_path=$(jq -r '.params.token_path // ""' < $payload)
     admin_user=$(jq -r '.source.admin_user // "admin"' < $payload)
     admin_token=$(jq -r '.source.admin_token // ""' < $payload)
 
