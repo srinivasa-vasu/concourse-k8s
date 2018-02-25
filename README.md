@@ -38,11 +38,11 @@ Replace the var between `{{ }}` with actual values or define it in the pipeline 
 
 ## Behavior
 
-### `check`: Checks for new versions
+### `check`: Checks for newer versions
 
 ### `in`: Not implemented yet
 
-### `out`: Deploys the k8s objects
+### `out`: Deploys various k8s objects
 
 ## Deploy Configuration (PUT)
 
@@ -76,7 +76,7 @@ Replace the var between `{{ }}` with actual values or define it in the pipeline 
 * `resource_type`: *Required.* K8s resource type (like deployment, service, configmap etc) 
 * `resource_name`: *Required.* Name of the k8s resource
 
-Based on the `resource_type` few other params may be required. Following k8s objects are configured now,
+Based on the `resource_type` few other params may be required. Following k8s objects can be configured now,
 * Deployment
 * Service
 * ConfigMap
@@ -151,3 +151,4 @@ jobs:
       - name: web
         port: "8080"
 ```
+*single put k8s object per job definition is allowed as well.*
