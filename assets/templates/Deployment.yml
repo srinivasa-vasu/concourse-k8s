@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: $resource_name
   namespace: $namespace
+  labels:
+    app: $resource_name
 spec:
   replicas: $replica
   template:
@@ -13,7 +15,7 @@ spec:
       containers:
       - name: $container_name
         image: $image:$tag
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: $image_pull_policy
 $command
         env:
 $env_values
@@ -28,3 +30,4 @@ $env_values
 $port_values
 $readiness_probe
 $liveness_probe
+      restartPolicy: $restart_policy

@@ -1,0 +1,21 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: $resource_name
+  namespace: $namespace
+  labels:
+    job: $resource_name
+spec:
+  template:
+    metadata:
+      labels:
+        app: $resource_name
+    spec:
+      containers:
+      - name: $container_name
+        image: $image:$tag
+        imagePullPolicy: $image_pull_policy
+$command
+        env:
+$env_values
+      restartPolicy: $restart_policy
