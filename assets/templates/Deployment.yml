@@ -19,6 +19,8 @@ spec:
 $command
         env:
 $env_values
+        volumeMounts:
+$volume_mounts
         resources:
           requests:
             memory: \"${resource_request_memory}\"
@@ -31,3 +33,5 @@ $port_values
 $readiness_probe
 $liveness_probe
       restartPolicy: $restart_policy
+      volumes:
+$volumes

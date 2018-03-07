@@ -37,6 +37,11 @@ parse() {
         fi
         port_values=$(jq -r ".params.port_values[]? | if .name and .containerPort then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")containerPort: \" + .containerPort) else empty end "  < $payload)
         replica=$(jq -r '.params.replica // "1"' < "$payload")
+        volume_mounts=$(jq -r ".params.volumes[]? | if .name and .mountPath then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")mountPath: \\\"\" + .mountPath + \"\\\"\") else empty end "  < $payload)
+        volumes=$(jq -r ".params.volumes[]? | if .name and .configMap then (\"$(printf "%6s")\"+\"- name: \"+.name + \"\n$(printf "%8s")configMap: \" +  \"\n$(printf "%10s")name: \\\"\" + .configMap + \"\\\"\")
+            elif .name and .persistentVolume then (\"$(printf "%6s")\"+\"- name: \"+.name + \"\n$(printf "%8s")persistentVolumeClaim: \" +  \"\n$(printf "%10s")claimName: \\\"\" + .persistentVolume + \"\\\"\")
+            elif .name then (\"$(printf "%6s")\"+\"- name: \"+.name + \"\n$(printf "%8s")emptyDir: {}\")
+            else empty end "  < $payload)
     ;;
     job|jb)
         # get image name
@@ -113,7 +118,6 @@ apply() {
     ;;
     job|jb)
        template="$(cat /opt/resource/templates/Job.yml)"
-       #eval "echo \"${template}\"" | sed '/^$/d'
        eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
        result="$(jq -n "{version:{container:\"$image:$tag\", ref:$(kubectl get job/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}}")"
        echo "Job object successfully initialized"
@@ -138,7 +142,9 @@ apply() {
     ;;
     *)
     ;;
-  esa  echo "\"$resource_type\" changes applied successfully"
+  esac
+
+  echo "\"$resource_type\" changes applied successfully"
 }
 
 function printDeploymentProbe()
