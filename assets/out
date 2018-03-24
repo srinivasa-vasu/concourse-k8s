@@ -66,6 +66,11 @@ parse() {
           config_data=$( echo $config_data | j2y | awk '{print "  " $0}' )
         fi
     ;;
+    ingress|ig)
+        service_port=$(jq -r '.params.service_port' < "$payload")
+        host=$(jq -r '.params.host // "*"' < "$payload")
+        path=$(jq -r '.params.path // "/"' < "$payload")
+    ;;
     *)
         echo "Not yet supported"
         exit 1
@@ -95,6 +100,12 @@ validate() {
     configmap|cm|secret|se)
        if [[ -z "$config_data" ]]; then
         echo "Missing config data"
+        exit 1
+       fi
+    ;;
+    ingress|ig)
+       if [[ -z "$service_port" ]]; then
+        echo "Missing service expose port"
         exit 1
        fi
     ;;
@@ -141,16 +152,17 @@ apply() {
        result="$(jq -n "{version:{ref:$(kubectl get secret/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion), buildId: \"$BUILD_ID\"}}")"
        echo "Secret object successfully created"
     ;;
+    ingress|ig)
+       template="$(cat /opt/resource/templates/Ingress.yml)"
+       eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
+       result="$(jq -n "{version:{ref:$(kubectl get ingress/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}, buildId: \"$BUILD_ID\"}")"
+       echo "Ingress object successfully initialized"
+    ;;
     *)
     ;;
   esac
 
   echo "\"$resource_type\" changes applied successfully"
-}
-
-function printDeploymentProbe()
-{
-    echo $(echo $1 | j2y | awk '{print "        " $0}')
 }
 
 # Read inputs

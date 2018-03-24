@@ -1,0 +1,16 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: $resource_name
+  namespace: $namespace
+  labels:
+    app: $resource_name
+spec:
+  rules:
+  - host: $host
+    http:
+      paths:
+      - path: $path
+        backend:
+          serviceName: $resource_name
+          servicePort: $service_port
