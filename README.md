@@ -81,6 +81,8 @@ Based on the `resource_type` few other params may be required. Following k8s obj
 * Service
 * ConfigMap
 * Secret
+* Ingress
+* Job
 
 Support will be added to configure more objects in the future.
 
