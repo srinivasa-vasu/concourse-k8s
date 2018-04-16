@@ -1,0 +1,46 @@
+apiVersion: apps/v1beta1
+kind: StatefulSet
+  name: $resource_name
+  namespace: $namespace
+  labels:
+    app: $resource_name
+spec:
+  serviceName: $service_name
+  replicas: $replica
+  template:
+    metadata:
+      labels:
+        app: $resource_name
+      annotations:
+    spec:
+      containers:
+      - name: $container_name
+        image: $image:$tag
+        imagePullPolicy: $image_pull_policy
+$command
+        env:
+$env_values
+        volumeMounts:
+$volume_mounts
+        resources:
+          requests:
+            memory: \"${resource_request_memory}\"
+            cpu: \"${resource_request_cpu}\"
+          limits:
+            memory: \"${resource_limit_memory}\"
+            cpu: \"${resource_limit_cpu}\"
+        ports:
+$port_values
+$readiness_probe
+$liveness_probe
+      volumes:
+$volumes
+  volumeClaimTemplates:
+  - metadata:
+      name: $volume_name
+    spec:
+      accessModes: [ \"$storage_access_mode\" ]
+      storageClassName: $storage_class_name
+      resources:
+        requests:
+          storage: "$storage_volume"

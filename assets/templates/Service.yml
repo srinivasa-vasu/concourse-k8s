@@ -6,6 +6,7 @@ metadata:
   labels:
     app: $resource_name
 spec:
+$cluster_ip
   selector:
     app: $resource_name
   type: $expose_type

@@ -8,11 +8,231 @@ exec 1>&2 # redirect all output to stderr for logging
 
 source /opt/resource/common.sh
 
+log() {
+
+  LEVEL=INFO
+  while test $# -gt 0
+  do
+    case $1 in
+      -l) shift; LEVEL=$1 ;;
+      *) break;
+    esac
+    shift
+  done
+
+  echo [$LEVEL] $*
+}
+
+die() {
+
+  TYPE=
+  if [ $# -gt 1 ]; then
+    TYPE=$1
+    shift
+  fi
+
+  log -l ERROR $@
+
+  log "Pls find the sample usage below:"
+  log ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
+  case $TYPE in
+    $DEPLOYMENT|$DP)
+    cat <<EOF
+      - put: kubernetes-deployment
+        params:
+          resource_type: deployment
+          resource_name: app
+          image_name: app_name
+          image_tag: app_tag
+          env_values:
+          - name: app_env_key
+            value: app_env_value
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "500m"
+            limits:
+              memory: "512Mi"
+              cpu: "1"
+          command:
+          - "echo hello there"
+          port_values:
+          - name: web
+            containerPort: "8080"
+          readiness_probe:
+            httpGet:
+              path: /management/health
+              port: web
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /management/health
+              port: web
+            initialDelaySeconds: 120
+          volumes:
+            - name: volume_name
+              mountPath: volume_mount_path
+EOF
+    ;;
+    $STATEFULSET|$ST)
+    cat <<EOF
+      - put: kubernetes-deployment
+        params:
+          resource_type: statefulset
+          resource_name: app
+          image_name: app_name
+          image_tag: app_tag
+          service_name: app_service_name
+          volume_name: app_storage_name
+          storage_class_name: app_storage_class_name
+          storage_volume: 10Gi
+          env_values:
+          - name: app_env_key
+            value: app_env_value
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "500m"
+            limits:
+              memory: "512Mi"
+              cpu: "1"
+          command:
+          - "echo hello there"
+          port_values:
+          - name: web
+            containerPort: "8080"
+          readiness_probe:
+            httpGet:
+              path: /management/health
+              port: web
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /management/health
+              port: web
+            initialDelaySeconds: 120
+          volumes:
+            - name: volume_name
+              mountPath: volume_mount_path
+              config: volume_configmap_ref
+EOF
+    ;;
+    $MULTICONTAINERDEPLOYMENT|$MD)
+    cat <<EOF
+      - put: kubernetes-deployment
+        params:
+          resource_type: multicontainerdeployment
+          init_containers:
+            - name: init_app_name
+              image: init_app_image
+              command:
+                - '/bin/sh'
+                - '-c'
+                - |
+                    while true
+                    do
+                      echo "Hi there!"
+                      break
+                    done
+          main_containers:
+          - name: app_name
+            image: app_image
+            imagePullPolicy: IfNotPresent
+            env:
+            - name: app_env_key
+              value: app_env_value
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "500m"
+              limits:
+                memory: "512Mi"
+                cpu: "1"
+            ports:
+            - name: web
+              containerPort: 8080
+            readinessProbe:
+              httpGet:
+                path: /management/health
+                port: web
+              initialDelaySeconds: 20
+              periodSeconds: 15
+              failureThreshold: 3
+            livenessProbe:
+              httpGet:
+                path: /management/health
+                port: web
+              initialDelaySeconds: 120
+EOF
+    ;;
+    $JOB|$JB)
+    cat <<EOF
+
+
+EOF
+    ;;
+    $SERVICE|$SV)
+    cat <<EOF
+      - put: kubernetes-deployment
+        params:
+          resource_type: service
+          resource_name: app_name
+          port_values:
+          - name: web
+            port: "8080"
+            targetPort: "8080"
+EOF
+    ;;
+    $CONFIGMAP|$CM)
+    cat <<EOF
+      - put: kubernetes-deployment
+        params:
+          resource_type: configmap
+          resource_name: app_name
+          config_data:
+            app.properties: |
+              key1=value1
+              key2=value2
+EOF
+    ;;
+    $SECRET|$SE)
+    cat <<EOF
+      - put: kubernetes-deployment
+        params:
+          resource_type: secret
+          resource_name: app_name
+          config_data:
+            app.properties: |
+              key1=value1
+              key2=value2
+EOF
+    ;;
+    $INGRESS|$IG)
+    cat <<EOF
+      - put: kubernetes-deployment
+        params:
+          resource_type: ingress
+          resource_name: app_name
+          service_port: "8080"
+          host: app-name.domain.com
+EOF
+    ;;
+    *)
+    ;;
+  esac
+  log ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
+  exit 1
+}
+
 parse() {
-  echo "Initializing common params..."
+  log -l INFO "Initializing common params..."
 
   case $resource_type in
-    $DEPLOYMENT|$DP)
+    $DEPLOYMENT|$DP|$STATEFULSET|$ST)
         # get image name
         image=$(jq -r .params.image_name < "$payload")
         tag=$(jq -r '.params.image_tag // "1.0"' < "$payload")
@@ -43,11 +263,19 @@ parse() {
             elif .name and .persistentVolume then (\"$(printf "%6s")\"+\"- name: \"+.name + \"\n$(printf "%8s")persistentVolumeClaim: \" +  \"\n$(printf "%10s")claimName: \\\"\" + .persistentVolume + \"\\\"\")
             elif .name then (\"$(printf "%6s")\"+\"- name: \"+.name + \"\n$(printf "%8s")emptyDir: {}\")
             else empty end "  < $payload)
+
+        if [[ ($resource_type = $STATEFULSET) || ($resource_type = $ST) ]]; then
+            service_name=$(jq -r '.params.service_name // ""' < "$payload")
+            volume_name=$(jq -r '.params.volume_name // ""' < "$payload")
+            storage_class_name=$(jq -r '.params.storage_class_name // ""' < "$payload")
+            storage_volume=$(jq -r '.params.storage_volume // "1Gi"' < "$payload")
+            storage_access_mode=$(jq -r '.params.storage_access_mode // "ReadWriteOnce"' < "$payload")
+        fi
     ;;
     $MULTICONTAINERDEPLOYMENT|$MD)
         # parse containers info
-        init_containers=$(echo $(jq -r .init_containers < "$payload") | j2y | awk '{print "        " $0})')
-        main_containers=$(echo $(jq -r .main_containers < "$payload") | j2y | awk '{print "        " $0})')
+        init_containers=$( echo $(jq -r .params.init_containers < "$payload") | j2y | awk '{print "        " $0}' )
+        main_containers=$( echo $(jq -r .params.main_containers < "$payload") | j2y | awk '{print "        " $0}' )
     ;;
     $JOB|$JB)
         # get image name
@@ -64,6 +292,7 @@ parse() {
     $SERVICE|$SV)
         port_values=$(jq -r ".params.port_values[]? | if .name and .port then (\"$(printf "%2s")\"+\"- name: \"+.name + \"\n$(printf "%4s")port: \"  + .port) else empty end "  < $payload)
         expose_type=$(jq -r '.params.expose_type // "ClusterIP"' < "$payload")
+        cluster_ip=$(jq -r "if .params.stateful == true then (\"$(printf "%2s")\"+\"clusterIP: \"+\"None\") else empty end "  < $payload)
     ;;
     $CONFIGMAP|$CM|$SECRET|$SE)
         config_data=$(jq -r '.params.config_data // ""' < "$payload")
@@ -78,115 +307,117 @@ parse() {
         path=$(jq -r '.params.path // "/"' < "$payload")
     ;;
     *)
-        echo "Not yet supported"
-        exit 1
+        die "Not yet supported"
     ;;
   esac
 
-  echo "Common params initialization successful"
+  log -l INFO "Common params initialization successful"
 }
 
 
 validate() {
-  echo "Validating params of \"$resource_type\" object..."
+  log -l INFO "Validating params of \"$resource_type\" object..."
 
   case $resource_type in
-    $DEPLOYMENT|$DP|$JOB|$JB)
-       if [[ -z "$image" ]]; then
-        echo "Missing container image"
-        exit 1
-       fi
+    $DEPLOYMENT|$DP|$JOB|$JB|$STATEFULSET|$ST)
+      [[ -z $image ]] && { die $resource_type "Missing container image"; }
+      if [[ ($resource_type = $STATEFULSET) || ($resource_type = $ST) ]]; then
+        [[ -z $service_name ]] && { die $resource_type "Missing service name"; }
+        [[ -z $volume_name ]] && { die $resource_type "Missing volume name"; }
+        [[ -z $storage_class_name ]] && { die $resource_type "Missing storage class name"; }
+      fi
     ;;
     $MULTICONTAINERDEPLOYMENT|$MD)
-       [[ -z $init-containers && -z $main-containers ]] && { echo "Missing container info. Either provide initContainers or containers details"; exit 1; }
-       declare -a arr=("init-containers" "main-containers")
-       for j in "${arr[@]}"
-       do
-         if [[ -n "$(echo $j)" ]]; then
-           len=$(jq -r --arg inp "$j" '.[$inp] | length' < "$payload")
-           for i in $(seq 0 $(expr $len - 1))
-           do
-             [[ -z $(jq -r --arg outer "$j" --argjson inner "$i" '.[$outer][$inner].name' < "$payload") ]] && { echo "Missing ${j} image name at [$i]"; exit 1; }
-             [[ -z $(jq -r --arg outer "$j" --argjson inner "$i" '.[$outer][$inner].image' < "$payload") ]] && { echo "Missing ${j} image at [$i]"; exit 1; }
-           done
-         fi
-       done
+      [[ -z $init-containers && -z $main-containers ]] && { die $resource_type "Missing container info. Either provide initContainers or containers details"; }
+      declare -a arr=("init-containers" "main-containers")
+      for j in "${arr[@]}"
+      do
+        if [[ -n "$(echo $j)" ]]; then
+          len=$(jq -r --arg inp "$j" '.[$inp] | length' < "$payload")
+          for i in $(seq 0 $(expr $len - 1))
+          do
+            [[ -z $(jq -r --arg outer "$j" --argjson inner "$i" '.[$outer][$inner].name' < "$payload") ]] && { die $resource_type "Missing ${j} image name at [$i]"; }
+            [[ -z $(jq -r --arg outer "$j" --argjson inner "$i" '.[$outer][$inner].image' < "$payload") ]] && { die $resource_type "Missing ${j} image at [$i]"; }
+          done
+        fi
+      done
     ;;
     $SERVICE|$SV)
-       if [[ -z "$port_values" ]]; then
-        echo "Missing expose port values"
-        exit 1
-       fi
+      [[ -z $port_values ]] && { die $resource_type "Missing expose port values"; }
     ;;
     $CONFIGMAP|$CM|$SECRET|$SE)
-       if [[ -z "$config_data" ]]; then
-        echo "Missing config data"
-        exit 1
-       fi
+      [[ -z $config_data ]] && { die $resource_type "Missing config data"; }
     ;;
     $INGRESS|$IG)
-       if [[ -z "$service_port" ]]; then
-        echo "Missing service expose port"
-        exit 1
-       elif [[ -z "host" ]]; then
-        echo "Missing host path"
-        exit 1
-       fi
+      [[ -z $service_port ]] && { die $resource_type "Missing service expose port"; }
+      [[ -z $host ]] && { die $resource_type "Missing host path"; }
     ;;
     *)
     ;;
   esac
 
-  echo "Validation of \"$resource_type\" object successful"
+  log -l INFO "Validation of \"$resource_type\" object successful"
 }
 
 apply() {
 
-  echo "Applying changes of \"$resource_type\"..."
+  log -l INFO "Applying changes of \"$resource_type\"..."
 
   case $resource_type in
     $DEPLOYMENT|$DP)
        template="$(cat /opt/resource/templates/Deployment.yml)"
-       #eval "echo \"${template}\"" | sed '/^$/d'
+       eval "echo \"${template}\"" | sed '/^$/d'
        eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
        result="$(jq -n "{version:{container:\"$image:$tag\", ref:$(kubectl get deploy/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}}")"
-       echo "Deployment object successfully initialized"
+       log -l INFO "Deployment object successfully initialized"
+    ;;
+    $MULTICONTAINERDEPLOYMENT|$MD)
+       template="$(cat /opt/resource/templates/MultiContainerDeployment.yml)"
+       eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
+       result="$(jq -n "{\"version\":{\"ref\": \"none\"}}")"
+       log -l INFO "Deployment object with multiple containers successfully initialized"
+    ;;
+    $STATEFULSET|$ST)
+       template="$(cat /opt/resource/templates/StatefulSet.yml)"
+       eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
+       result="$(jq -n "{version:{container:\"$image:$tag\", ref:$(kubectl get deploy/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}}")"
+       log -l INFO "StatefulSet object successfully initialized"
     ;;
     $JOB|$JB)
        template="$(cat /opt/resource/templates/Job.yml)"
        eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
        result="$(jq -n "{version:{container:\"$image:$tag\", ref:$(kubectl get job/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}}")"
-       echo "Job object successfully initialized"
+       log -l INFO "Job object successfully initialized"
     ;;
     $SERVICE|$SV)
        template="$(cat /opt/resource/templates/Service.yml)"
        eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
        result="$(jq -n "{version:{ref:$(kubectl get svc/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}, buildId: \"$BUILD_ID\"}")"
-       echo "Service object successfully initialized"
+       log -l INFO "Service object successfully initialized"
     ;;
     $CONFIGMAP|$CM)
        template="$(cat /opt/resource/templates/ConfigMap.yml)"
        eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
        result="$(jq -n "{version:{ref:$(kubectl get cm/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion), buildId: \"$BUILD_ID\"}}")"
-       echo "ConfigMap object successfully created"
+       log -l INFO "ConfigMap object successfully created"
     ;;
     $SECRET|$SE)
        template="$(cat /opt/resource/templates/Secret.yml)"
        eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
        result="$(jq -n "{version:{ref:$(kubectl get secret/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion), buildId: \"$BUILD_ID\"}}")"
-       echo "Secret object successfully created"
+       log -l INFO "Secret object successfully created"
     ;;
     $INGRESS|$IG)
        template="$(cat /opt/resource/templates/Ingress.yml)"
        eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
        result="$(jq -n "{version:{ref:$(kubectl get ingress/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}, buildId: \"$BUILD_ID\"}")"
-       echo "Ingress object successfully initialized"
+       log -l INFO "Ingress object successfully initialized"
     ;;
     *)
     ;;
   esac
 
-  echo "\"$resource_type\" changes applied successfully"
+  log -l INFO "\"$resource_type\" changes applied successfully"
 }
 
 #initialize constants
@@ -215,22 +446,22 @@ cat > $payload <&0
 # Prepare
 initialize $payload $source
 
-echo "Parsing parameters"
+log -l INFO "Parsing parameters"
 # Parse parameters
-resource_type=$(echo $(jq -r .params.resource_type < "$payload") | awk '{print tolower($0)}')
+resource_type=$(echo $(jq -r '.params.resource_type // ""' < "$payload") | awk '{print tolower($0)}')
 
 if [[ -z "$resource_type" ]]; then
-    resource_type=$(echo $(jq -r .source.resource_type < "$payload") | awk '{print tolower($0)}')
+    resource_type=$(echo $(jq -r '.source.resource_type // ""' < "$payload") | awk '{print tolower($0)}')
 fi
 
-[[ -z $resource_type ]] && { echo "Missing resource type"; exit 1; }
+[[ -z $resource_type ]] && { die "Missing resource type"; }
 
 resource_name=$(jq -r '.params.resource_name // ""' < "$payload")
 if [[ -z "$resource_name" ]]; then
-    resource_name=$(jq -r .source.resource_name < "$payload")
+    resource_name=$(jq -r '.source.resource_name // ""' < "$payload")
 fi
 
-[[ -z $resource_name && ($resource_type != '$MULTICONTAINERDEPLOYMENT' && $resource_type != '$md') ]] && { echo "Missing resource name"; exit 1; }
+[[ -z $resource_name && ($resource_type != "$MULTICONTAINERDEPLOYMENT" && $resource_type != "$md") ]] && { die "Missing resource name"; }
 
 container_name=$(jq -r '.source.container_name // ""' < "$payload")
 if [[ -z "$container_name" ]]; then
