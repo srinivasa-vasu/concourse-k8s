@@ -5,6 +5,10 @@ metadata:
   namespace: $namespace
   labels:
     app: $resource_name
+  annotations:
+    kubernetes.io/ingress.class: $ingress_class
+    ingress.kubernetes.io/rewrite-target: /
+    ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   rules:
   - host: $host

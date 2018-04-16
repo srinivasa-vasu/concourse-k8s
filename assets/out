@@ -68,7 +68,8 @@ parse() {
     ;;
     ingress|ig)
         service_port=$(jq -r '.params.service_port' < "$payload")
-        host=$(jq -r '.params.host // "*"' < "$payload")
+        host=$(jq -r '.params.host' < "$payload")
+        ingress_class=$(jq -r '.params.ingress_class // "ingress"' < "$payload")
         path=$(jq -r '.params.path // "/"' < "$payload")
     ;;
     *)
@@ -106,6 +107,9 @@ validate() {
     ingress|ig)
        if [[ -z "$service_port" ]]; then
         echo "Missing service expose port"
+        exit 1
+       elif [[ -z "host" ]]; then
+        echo "Missing host path"
         exit 1
        fi
     ;;
