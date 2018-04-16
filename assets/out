@@ -12,7 +12,7 @@ parse() {
   echo "Initializing common params..."
 
   case $resource_type in
-    deployment|dp)
+    $DEPLOYMENT|$DP)
         # get image name
         image=$(jq -r .params.image_name < "$payload")
         tag=$(jq -r '.params.image_tag // "1.0"' < "$payload")
@@ -44,7 +44,12 @@ parse() {
             elif .name then (\"$(printf "%6s")\"+\"- name: \"+.name + \"\n$(printf "%8s")emptyDir: {}\")
             else empty end "  < $payload)
     ;;
-    job|jb)
+    $MULTICONTAINERDEPLOYMENT|$MD)
+        # get image name
+        init_containers=$(echo $(jq -r .init_containers < "$payload") | j2y | awk '{print "        " $0})')
+        main_containers=$(echo $(jq -r .main_containers < "$payload") | j2y | awk '{print "        " $0})')
+    ;;
+    $JOB|$JB)
         # get image name
         image=$(jq -r .params.image_name < "$payload")
         tag=$(jq -r '.params.image_tag // "1.0"' < "$payload")
@@ -56,17 +61,17 @@ parse() {
           command=$( echo $command | j2y | awk '{print "        " $0}' )
         fi
     ;;
-    service|sv)
+    $SERVICE|$SV)
         port_values=$(jq -r ".params.port_values[]? | if .name and .port then (\"$(printf "%2s")\"+\"- name: \"+.name + \"\n$(printf "%4s")port: \"  + .port) else empty end "  < $payload)
         expose_type=$(jq -r '.params.expose_type // "ClusterIP"' < "$payload")
     ;;
-    configmap|cm|secret|se)
+    $CONFIGMAP|$CM|$SECRET|$SE)
         config_data=$(jq -r '.params.config_data // ""' < "$payload")
         if [[ -n $config_data ]]; then
           config_data=$( echo $config_data | j2y | awk '{print "  " $0}' )
         fi
     ;;
-    ingress|ig)
+    $INGRESS|$IG)
         service_port=$(jq -r '.params.service_port' < "$payload")
         host=$(jq -r '.params.host' < "$payload")
         ingress_class=$(jq -r '.params.ingress_class // "ingress"' < "$payload")
@@ -86,25 +91,39 @@ validate() {
   echo "Validating params of \"$resource_type\" object..."
 
   case $resource_type in
-    deployment|dp|job|jb)
+    $DEPLOYMENT|$DP|$JOB|$JB)
        if [[ -z "$image" ]]; then
         echo "Missing container image"
         exit 1
        fi
     ;;
-    service|sv)
+    $MULTICONTAINERDEPLOYMENT|$MD)
+       declare -a arr=("init-containers" "main-containers")
+       for j in "${arr[@]}"
+       do
+         if [[ -n "$(echo $j)" ]]; then
+           len=$(jq -r --arg inp "$j" '.[$inp] | length' < "$payload")
+           for i in $(seq 0 $(expr $len - 1))
+           do
+             [[ -z $(jq -r --arg outer "$j" --argjson inner "$i" '.[$outer][$inner].name' < "$payload") ]] && { echo "Missing ${j} image name at [$i]"; exit 1; }
+             [[ -z $(jq -r --arg outer "$j" --argjson inner "$i" '.[$outer][$inner].image' < "$payload") ]] && { echo "Missing ${j} image at [$i]"; exit 1; }
+           done
+         fi
+       done
+    ;;
+    $SERVICE|$SV)
        if [[ -z "$port_values" ]]; then
         echo "Missing expose port values"
         exit 1
        fi
     ;;
-    configmap|cm|secret|se)
+    $CONFIGMAP|$CM|$SECRET|$SE)
        if [[ -z "$config_data" ]]; then
         echo "Missing config data"
         exit 1
        fi
     ;;
-    ingress|ig)
+    $INGRESS|$IG)
        if [[ -z "$service_port" ]]; then
         echo "Missing service expose port"
         exit 1
@@ -125,38 +144,38 @@ apply() {
   echo "Applying changes of \"$resource_type\"..."
 
   case $resource_type in
-    deployment|dp)
+    $DEPLOYMENT|$DP)
        template="$(cat /opt/resource/templates/Deployment.yml)"
        #eval "echo \"${template}\"" | sed '/^$/d'
        eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
        result="$(jq -n "{version:{container:\"$image:$tag\", ref:$(kubectl get deploy/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}}")"
        echo "Deployment object successfully initialized"
     ;;
-    job|jb)
+    $JOB|$JB)
        template="$(cat /opt/resource/templates/Job.yml)"
        eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
        result="$(jq -n "{version:{container:\"$image:$tag\", ref:$(kubectl get job/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}}")"
        echo "Job object successfully initialized"
     ;;
-    service|sv)
+    $SERVICE|$SV)
        template="$(cat /opt/resource/templates/Service.yml)"
        eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
        result="$(jq -n "{version:{ref:$(kubectl get svc/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}, buildId: \"$BUILD_ID\"}")"
        echo "Service object successfully initialized"
     ;;
-    configmap|cm)
+    $CONFIGMAP|$CM)
        template="$(cat /opt/resource/templates/ConfigMap.yml)"
        eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
        result="$(jq -n "{version:{ref:$(kubectl get cm/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion), buildId: \"$BUILD_ID\"}}")"
        echo "ConfigMap object successfully created"
     ;;
-    secret|se)
+    $SECRET|$SE)
        template="$(cat /opt/resource/templates/Secret.yml)"
        eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
        result="$(jq -n "{version:{ref:$(kubectl get secret/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion), buildId: \"$BUILD_ID\"}}")"
        echo "Secret object successfully created"
     ;;
-    ingress|ig)
+    $INGRESS|$IG)
        template="$(cat /opt/resource/templates/Ingress.yml)"
        eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
        result="$(jq -n "{version:{ref:$(kubectl get ingress/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}, buildId: \"$BUILD_ID\"}")"
@@ -169,9 +188,27 @@ apply() {
   echo "\"$resource_type\" changes applied successfully"
 }
 
+#initialize constants
+DEPLOYMENT=deployment
+DP=dp
+JOB=job
+JB=jb
+MULTICONTAINERDEPLOYMENT=multicontainerdeployment
+MD=md
+INGRESS=ingress
+IG=ig
+SECRET=secret
+SE=se
+CONFIGMAP=configmap
+CM=cm
+STATEFULSET=statefulset
+ST=st
+SERVICE=service
+SV=sv
+
 # Read inputs
 source=$1
-payload=$(mktemp helm-resource-request.XXXXXX)
+payload=$(mktemp k8s-resource-request.XXXXXX)
 cat > $payload <&0
 
 # Prepare
@@ -192,7 +229,7 @@ if [[ -z "$resource_name" ]]; then
     resource_name=$(jq -r .source.resource_name < "$payload")
 fi
 
-[[ -z $resource_name ]] && { echo "Missing resource name"; exit 1; }
+[[ -z $resource_name && ($resource_type != '$MULTICONTAINERDEPLOYMENT' && $resource_type != '$md') ]] && { echo "Missing resource name"; exit 1; }
 
 container_name=$(jq -r '.source.container_name // ""' < "$payload")
 if [[ -z "$container_name" ]]; then

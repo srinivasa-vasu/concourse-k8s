@@ -1,0 +1,18 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: $resource_name
+  namespace: $namespace
+  labels:
+    app: $resource_name
+spec:
+  replicas: $replica
+  template:
+    metadata:
+      labels:
+        app: $resource_name
+    spec:
+      initContainers:
+$init_containers
+      containers:
+$main_containers
