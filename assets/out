@@ -45,7 +45,7 @@ parse() {
             else empty end "  < $payload)
     ;;
     $MULTICONTAINERDEPLOYMENT|$MD)
-        # get image name
+        # parse containers info
         init_containers=$(echo $(jq -r .init_containers < "$payload") | j2y | awk '{print "        " $0})')
         main_containers=$(echo $(jq -r .main_containers < "$payload") | j2y | awk '{print "        " $0})')
     ;;
@@ -98,6 +98,7 @@ validate() {
        fi
     ;;
     $MULTICONTAINERDEPLOYMENT|$MD)
+       [[ -z $init-containers && -z $main-containers ]] && { echo "Missing container info. Either provide initContainers or containers details"; exit 1; }
        declare -a arr=("init-containers" "main-containers")
        for j in "${arr[@]}"
        do
