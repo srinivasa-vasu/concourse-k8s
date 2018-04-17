@@ -31,7 +31,7 @@ die() {
     shift
   fi
 
-  log -l ERROR $@
+  log -l ERROR ">>> $@ <<<"
 
   log "Pls find the sample usage below:"
   log ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
@@ -40,10 +40,11 @@ die() {
     cat <<EOF
       - put: kubernetes-deployment
         params:
-          resource_type: deployment
-          resource_name: app
-          image_name: app_name
-          image_tag: app_tag
+          resource_type: deployment '*'
+          resource_name: app '*'
+          replica: 1
+          image_name: app_name '*'
+          image_tag: app_tag '*'
           env_values:
           - name: app_env_key
             value: app_env_value
@@ -80,13 +81,13 @@ EOF
     cat <<EOF
       - put: kubernetes-deployment
         params:
-          resource_type: statefulset
-          resource_name: app
-          image_name: app_name
-          image_tag: app_tag
-          service_name: app_service_name
-          volume_name: app_storage_name
-          storage_class_name: app_storage_class_name
+          resource_type: statefulset '*'
+          resource_name: app '*'
+          image_name: app_name '*'
+          image_tag: app_tag '*'
+          service_name: app_service_name '*'
+          volume_name: app_storage_name '*'
+          storage_class_name: app_storage_class_name '*'
           storage_volume: 10Gi
           env_values:
           - name: app_env_key
@@ -125,8 +126,10 @@ EOF
     cat <<EOF
       - put: kubernetes-deployment
         params:
-          resource_type: multicontainerdeployment
-          init_containers:
+          resource_type: multicontainerdeployment '*'
+          resource_name: app '*'
+          replica: 1
+          init_containers: '*'
             - name: init_app_name
               image: init_app_image
               command:
@@ -138,7 +141,7 @@ EOF
                       echo "Hi there!"
                       break
                     done
-          main_containers:
+          main_containers: '*'
           - name: app_name
             image: app_image
             imagePullPolicy: IfNotPresent
@@ -179,9 +182,10 @@ EOF
     cat <<EOF
       - put: kubernetes-deployment
         params:
-          resource_type: service
-          resource_name: app_name
-          port_values:
+          resource_type: service '*'
+          resource_name: app_name '*'
+          stateful: true '*'(Mandatory for creating headless service, if not optional)
+          port_values: '*'
           - name: web
             port: "8080"
             targetPort: "8080"
@@ -191,9 +195,9 @@ EOF
     cat <<EOF
       - put: kubernetes-deployment
         params:
-          resource_type: configmap
-          resource_name: app_name
-          config_data:
+          resource_type: configmap '*'
+          resource_name: app_name '*'
+          config_data: '*'
             app.properties: |
               key1=value1
               key2=value2
@@ -203,9 +207,9 @@ EOF
     cat <<EOF
       - put: kubernetes-deployment
         params:
-          resource_type: secret
-          resource_name: app_name
-          config_data:
+          resource_type: secret '*'
+          resource_name: app_name '*'
+          config_data: '*'
             app.properties: |
               key1=value1
               key2=value2
@@ -215,17 +219,53 @@ EOF
     cat <<EOF
       - put: kubernetes-deployment
         params:
-          resource_type: ingress
-          resource_name: app_name
-          service_port: "8080"
-          host: app-name.domain.com
+          resource_type: ingress '*'
+          resource_name: app_name '*'
+          service_port: "8080" '*'
+          host: app-name.domain.com '*'
 EOF
     ;;
     *)
     ;;
   esac
+  log "Mandatory params are indicated with '*'"
   log ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
   exit 1
+}
+
+fill() {
+
+  case $resource_type in
+    $DEPLOYMENT|$DP|$STATEFULSET|$ST)
+      if [ $1 = $PRB ]; then
+        echo 8
+      elif [ $1 = $CMD ]; then
+        echo 8
+      fi
+    ;;
+    $MULTICONTAINERDEPLOYMENT|$MD)
+      if [ $1 = $CNT ]; then
+        echo 6
+      fi
+    ;;
+    $JOB|$JB)
+      if [ $1 = $CMD ]; then
+        echo 6
+      fi
+    ;;
+    $SERVICE|$SV)
+    ;;
+    $CONFIGMAP|$CM|$SECRET|$SE)
+      if [ $1 = $CFD ]; then
+        echo 2
+      fi
+    ;;
+    $INGRESS|$IG)
+    ;;
+    *)
+    ;;
+  esac
+
 }
 
 parse() {
@@ -245,17 +285,17 @@ parse() {
         env_values=$(jq -r ".params.env_values[]? | if .name and .value then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")value: \\\"\" + .value + \"\\\"\") else empty end "  < $payload)
         readiness_probe=$(jq -r 'if .params.readiness_probe then {readinessProbe: .params.readiness_probe} else empty end' < "$payload")
         if [[ -n $readiness_probe ]]; then
-          readiness_probe=$( echo $readiness_probe | j2y | awk '{print "        " $0}' )
+          readiness_probe=$( echo $readiness_probe | j2y | awk '{printf "%"'$(fill $PRB)'"s%s\n", "", $0}' )
         fi
         command=$(jq -r 'if .params.command then {command: .params.command} else empty end' < "$payload")
         if [[ -n $command ]]; then
-          command=$( echo $command | j2y | awk '{print "        " $0}' )
+          command=$( echo $command | j2y | awk '{printf "%"'$(fill $CMD)'"s%s\n", "", $0}' )
         fi
         liveness_probe=$(jq -r 'if .params.liveness_probe then {livenessProbe: .params.liveness_probe} else empty end' < "$payload")
         if [[ -n $liveness_probe ]]; then
-          liveness_probe=$( echo $liveness_probe | j2y | awk '{print "        " $0}' )
+          liveness_probe=$( echo $liveness_probe | j2y | awk '{printf "%"'$(fill $PRB)'"s%s\n", "", $0}' )
         fi
-        port_values=$(jq -r ".params.port_values[]? | if .name and .containerPort then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")containerPort: \" + .containerPort) else empty end "  < $payload)
+        port_values=$(jq -r "if (.params.port_values | length) > 0 then .params.port_values[] | if .name and .containerPort then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")containerPort: \" + .containerPort) else empty end else (\"$(printf "%8s")\"+\"- name: web\" + \"\n$(printf "%10s")containerPort: 8080\") end"  < $payload)
         replica=$(jq -r '.params.replica // "1"' < "$payload")
         volume_mounts=$(jq -r ".params.volumes[]? | if .name and .mountPath then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")mountPath: \\\"\" + .mountPath + \"\\\"\") else empty end "  < $payload)
         volumes=$(jq -r ".params.volumes[]? | if .name and .config then (\"$(printf "%6s")\"+\"- name: \"+.name + \"\n$(printf "%8s")configMap: \" +  \"\n$(printf "%10s")name: \\\"\" + .config + \"\\\"\")
@@ -274,8 +314,9 @@ parse() {
     ;;
     $MULTICONTAINERDEPLOYMENT|$MD)
         # parse containers info
-        init_containers=$( echo $(jq -r .params.init_containers < "$payload") | j2y | awk '{print "        " $0}' )
-        main_containers=$( echo $(jq -r .params.main_containers < "$payload") | j2y | awk '{print "        " $0}' )
+        replica=$(jq -r '.params.replica // "1"' < "$payload")
+        init_containers=$( echo $(jq -r .params.init_containers < "$payload") | j2y | awk '{printf "%"'$(fill $CNT)'"s%s\n", "", $0}' )
+        main_containers=$( echo $(jq -r .params.main_containers < "$payload") | j2y | awk '{printf "%"'$(fill $CNT)'"s%s\n", "", $0}' )
     ;;
     $JOB|$JB)
         # get image name
@@ -286,7 +327,7 @@ parse() {
         env_values=$(jq -r ".params.env_values[]? | if .name and .value then (\"$(printf "%8s")\"+\"- name: \"+.name + \"\n$(printf "%10s")value: \\\"\" + .value + \"\\\"\") else empty end "  < $payload)
         command=$(jq -r 'if .params.command then {command: .params.command} else empty end' < "$payload")
         if [[ -n $command ]]; then
-          command=$( echo $command | j2y | awk '{print "        " $0}' )
+          command=$( echo $command | j2y | awk '{printf "%"'$(fill $CMD)'"s%s\n", "", $0}' )
         fi
     ;;
     $SERVICE|$SV)
@@ -297,7 +338,7 @@ parse() {
     $CONFIGMAP|$CM|$SECRET|$SE)
         config_data=$(jq -r '.params.config_data // ""' < "$payload")
         if [[ -n $config_data ]]; then
-          config_data=$( echo $config_data | j2y | awk '{print "  " $0}' )
+          config_data=$( echo $config_data | j2y | awk '{printf "%"'$(fill $CFD)'"s%s\n", "", $0}' )
         fi
     ;;
     $INGRESS|$IG)
@@ -365,52 +406,43 @@ apply() {
 
   case $resource_type in
     $DEPLOYMENT|$DP)
-       template="$(cat /opt/resource/templates/Deployment.yml)"
-       eval "echo \"${template}\"" | sed '/^$/d'
-       eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
-       result="$(jq -n "{version:{container:\"$image:$tag\", ref:$(kubectl get deploy/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}}")"
+       template="$(cat $TEMPLATE/Deployment.yml)"
+       k8sapply "deploy"
        log -l INFO "Deployment object successfully initialized"
     ;;
     $MULTICONTAINERDEPLOYMENT|$MD)
-       template="$(cat /opt/resource/templates/MultiContainerDeployment.yml)"
-       eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
-       result="$(jq -n "{\"version\":{\"ref\": \"none\"}}")"
+       template="$(cat $TEMPLATE/MultiContainerDeployment.yml)"
+       k8sapply
        log -l INFO "Deployment object with multiple containers successfully initialized"
     ;;
     $STATEFULSET|$ST)
-       template="$(cat /opt/resource/templates/StatefulSet.yml)"
-       eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
-       result="$(jq -n "{version:{container:\"$image:$tag\", ref:$(kubectl get deploy/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}}")"
+       template="$(cat $TEMPLATE/StatefulSet.yml)"
+       k8sapply "deploy"
        log -l INFO "StatefulSet object successfully initialized"
     ;;
     $JOB|$JB)
-       template="$(cat /opt/resource/templates/Job.yml)"
-       eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
-       result="$(jq -n "{version:{container:\"$image:$tag\", ref:$(kubectl get job/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}}")"
+       template="$(cat $TEMPLATE/Job.yml)"
+       k8sapply "job"
        log -l INFO "Job object successfully initialized"
     ;;
     $SERVICE|$SV)
-       template="$(cat /opt/resource/templates/Service.yml)"
-       eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
-       result="$(jq -n "{version:{ref:$(kubectl get svc/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}, buildId: \"$BUILD_ID\"}")"
+       template="$(cat $TEMPLATE/Service.yml)"
+       k8sapply "svc"
        log -l INFO "Service object successfully initialized"
     ;;
     $CONFIGMAP|$CM)
-       template="$(cat /opt/resource/templates/ConfigMap.yml)"
-       eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
-       result="$(jq -n "{version:{ref:$(kubectl get cm/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion), buildId: \"$BUILD_ID\"}}")"
+       template="$(cat $TEMPLATE/ConfigMap.yml)"
+       k8sapply "cm"
        log -l INFO "ConfigMap object successfully created"
     ;;
     $SECRET|$SE)
-       template="$(cat /opt/resource/templates/Secret.yml)"
-       eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
-       result="$(jq -n "{version:{ref:$(kubectl get secret/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion), buildId: \"$BUILD_ID\"}}")"
+       template="$(cat $TEMPLATE/Secret.yml)"
+       k8sapply "secret"
        log -l INFO "Secret object successfully created"
     ;;
     $INGRESS|$IG)
-       template="$(cat /opt/resource/templates/Ingress.yml)"
-       eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
-       result="$(jq -n "{version:{ref:$(kubectl get ingress/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}, buildId: \"$BUILD_ID\"}")"
+       template="$(cat $TEMPLATE/Ingress.yml)"
+       k8sapply "ingress"
        log -l INFO "Ingress object successfully initialized"
     ;;
     *)
@@ -418,6 +450,27 @@ apply() {
   esac
 
   log -l INFO "\"$resource_type\" changes applied successfully"
+}
+
+k8sapply(){
+
+  if [ $APPLY = "Y" ]; then
+    eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply -f -
+    case $resource_type in
+      $DEPLOYMENT|$DP|$STATEFULSET|$ST|$JOB|$JB)
+        result="$(jq -n "{version:{container:\"$image:$tag\", ref:$(kubectl get $1/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}}")"
+      ;;
+      $SERVICE|$SV|$CONFIGMAP|$CM|$SECRET|$SE|$INGRESS|$IG)
+        result="$(jq -n "{version:{ref:$(kubectl get $1/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}, buildId: \"$BUILD_ID\"}")"
+      ;;
+      *)
+        result="$(jq -n "{\"version\":{\"ref\": \"none\"}}")"
+      ;;
+    esac
+  else
+    eval "echo \"${template}\"" | sed '/^$/d' | kubectl apply --dry-run=true --validate=true -f -
+  fi
+
 }
 
 #initialize constants
@@ -437,6 +490,14 @@ STATEFULSET=statefulset
 ST=st
 SERVICE=service
 SV=sv
+TEMPLATE="/opt/resource/templates"
+APPLY=Y
+
+#initialize other constants
+PRB=pb
+CMD=cmd
+CFD=cfd
+CNT=cnt
 
 # Read inputs
 source=$1
@@ -461,7 +522,7 @@ if [[ -z "$resource_name" ]]; then
     resource_name=$(jq -r '.source.resource_name // ""' < "$payload")
 fi
 
-[[ -z $resource_name && ($resource_type != "$MULTICONTAINERDEPLOYMENT" && $resource_type != "$md") ]] && { die "Missing resource name"; }
+[[ -z $resource_name  ]] && { die $resource_type "Missing resource name"; }
 
 container_name=$(jq -r '.source.container_name // ""' < "$payload")
 if [[ -z "$container_name" ]]; then

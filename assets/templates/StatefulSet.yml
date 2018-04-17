@@ -1,5 +1,6 @@
 apiVersion: apps/v1beta1
 kind: StatefulSet
+metadata:
   name: $resource_name
   namespace: $namespace
   labels:
