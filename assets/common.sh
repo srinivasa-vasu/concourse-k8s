@@ -288,3 +288,21 @@ initialize() {
 
   log "Resource setup successful."
 }
+
+#initialize constants
+DEPLOYMENT=deployment
+DP=dp
+JOB=job
+JB=jb
+MULTICONTAINERDEPLOYMENT=multicontainerdeployment
+MD=md
+INGRESS=ingress
+IG=ig
+SECRET=secret
+SE=se
+CONFIGMAP=configmap
+CM=cm
+STATEFULSET=statefulset
+ST=st
+SERVICE=service
+SV=sv
