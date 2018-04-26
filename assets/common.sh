@@ -3,7 +3,7 @@ set -e
 
 log() {
 
-  LEVEL=INFO
+  LEVEL=$INFO
   while test $# -gt 0
   do
     case $1 in
@@ -13,7 +13,8 @@ log() {
     shift
   done
 
-  echo [$LEVEL] $*
+  [[ $LEVEL = $ERROR ]] && { printf "\033[1;31m[$LEVEL]$*\033[0m \n" ; } || { echo "[$LEVEL] $*" ;}
+
 }
 
 die() {
@@ -24,7 +25,7 @@ die() {
     shift
   fi
 
-  log -l ERROR ">>> $@ <<<"
+  log -l $ERROR ">>> $@ <<<"
 
   if [[ -n $TYPE ]]; then
       log "Pls find the sample usage below:"
@@ -306,3 +307,5 @@ STATEFULSET=statefulset
 ST=st
 SERVICE=service
 SV=sv
+ERROR=ERROR
+INFO=INFO
