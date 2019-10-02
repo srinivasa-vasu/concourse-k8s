@@ -238,6 +238,9 @@ k8sapply(){
       $SERVICE|$SV|$CONFIGMAP|$CM|$SECRET|$SE|$INGRESS|$IG)
         result="$(jq -n "{version:{ref:$(kubectl get $1/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}, buildId: \"$BUILD_ID\"}")"
       ;;
+      $MULTICONTAINERDEPLOYMENT|$MD)
+        result="$(jq -n "{version:{ref:$(kubectl get $1/${resource_name} -n ${namespace} -o json | jq .metadata.resourceVersion)}}")"
+      ;;
       *)
         result="$(jq -n "{\"version\":{\"ref\": \"none\"}}")"
       ;;
